@@ -117,8 +117,61 @@ __global__ void qk_scores(const float* q, const float* k, float* scores, int seq
     }
 }
 
-# Step 10 - softmax_rows (not yet solved)
-# TODO: implement
+# Step 10 - softmax_rows
+__global__ void softmax_rows(float* matrix, int rows, int cols) {
+    int r = blockIdx.x;
+    int tid = threadIdx.x;
+
+    if (r >= rows) {
+        return;
+    }
+
+    extern __shared__ float shared[];
+    float* row = matrix + r * cols;
+
+    float local_max = -INFINITY;
+
+    for (int c = tid; c < cols; c += blockDim.x) {
+        local_max = fmaxf(local_max, row[c]);
+    }
+
+    shared[tid] = local_max;
+    __syncthreads();
+
+    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+        if (tid < stride) {
+            shared[tid] = fmaxf(shared[tid], shared[tid + stride]);
+        }
+        __syncthreads();
+    }
+
+    float max_value = shared[0];
+    __syncthreads();
+
+    float local_sum = 0.0f;
+
+    for (int c = tid; c < cols; c += blockDim.x) {
+        float value = expf(row[c] - max_value);
+        row[c] = value;
+        local_sum += value;
+    }
+
+    shared[tid] = local_sum;
+    __syncthreads();
+
+    for (int stride = blockDim.x / 2; stride > 0; stride /= 2) {
+        if (tid < stride) {
+            shared[tid] += shared[tid + stride];
+        }
+        __syncthreads();
+    }
+
+    float sum_value = shared[0];
+
+    for (int c = tid; c < cols; c += blockDim.x) {
+        row[c] /= sum_value;
+    }
+}
 
 # Step 11 - pv_matmul (not yet solved)
 # TODO: implement
